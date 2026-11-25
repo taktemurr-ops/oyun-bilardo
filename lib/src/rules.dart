@@ -11,6 +11,10 @@ class PoolRules extends ArcadeRules<ShotLevel> {
   @override
   List<String> get optionalMechanics => const [];
 
+  /// İki kişilik: "Bilgisayara karşı" ve "Çevrimiçi masa" (sırayla atış).
+  @override
+  int get localPlayers => 2;
+
   @override
   List<GameStat> get gameStats => const [
         GameStat('balls_potted', 'Cebe giren top', 'Balls potted', scale: 300),

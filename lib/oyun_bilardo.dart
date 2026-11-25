@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:studio_core/app/arcade_stage.dart';
 import 'package:studio_core/app/game_api.dart';
 import 'package:studio_core/core/game_rules.dart';
+import 'package:studio_core/core/level_plan.dart';
 import 'package:studio_core/core/strings.dart';
 
+import 'src/pool_duel.dart';
 import 'src/rules.dart';
 import 'src/shot_engine.dart';
 import 'src/shot_view.dart';
 
+export 'src/pool_duel.dart';
 export 'src/rules.dart';
 export 'src/shot_engine.dart';
 
@@ -127,7 +130,15 @@ final bilardoConfig = GameConfig(
   seedColor: const Color(0xFF2E7D32),
   icon: Icons.sports_baseball_rounded,
   rules: PoolRules(),
-  buildPlay: (ctx) => ArcadeStage(
+  // Seviyeler ve çevrimiçi masa iki kişilik (bilgisayara ya da rakibe karşı);
+  // günlük, haftalık ve meydan okuma tek kişilik masa temizleme olarak kalır.
+  buildPlay: (ctx) {
+    final level = (ctx.generated as GeneratedLevel<ShotLevel>).puzzle;
+    final mode = ctx.spec.mode;
+    if (ctx.match != null || mode == GameModeId.campaign || mode == GameModeId.versus || mode == GameModeId.online) {
+      return PoolDuelView(ctx: ctx, level: level);
+    }
+    return ArcadeStage(
     ctx: ctx,
     create: () => ShotSim((ctx.generated as GeneratedLevel<ShotLevel>).puzzle),
     paint: paintShot,
@@ -169,7 +180,8 @@ final bilardoConfig = GameConfig(
       'Nhấn, kéo lùi rồi thả: độ dài là lực, hướng ngược lại là hướng đánh.',
       'Pindutin, hilahin pabalik at bitawan: ang haba ang lakas, ang kabilang direksyon ang tira.',
     ],
-  ),
+  );
+  },
   tutorial: const [
     TutorialStep(Icons.open_with, [
       'Istakayı geri çek ve bırak.',
