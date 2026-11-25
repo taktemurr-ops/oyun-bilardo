@@ -407,11 +407,17 @@ class _PoolDuelViewState extends State<PoolDuelView> with SingleTickerProviderSt
     final head = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(children: [
-        _chip('${Strings.pick(_tYou, lang)} ${match.score[me]}', myTurn),
-        const Spacer(),
-        Text(Strings.pick(myTurn ? _tYourTurn : _tRivalTurn, lang), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-        const Spacer(),
-        _chip('${widget.ctx.match != null ? widget.ctx.seatName(opp) : Strings.pick(_tRival, lang)} ${match.score[opp]}', !myTurn),
+        Flexible(child: _chip('${Strings.pick(_tYou, lang)} ${match.score[me]}', myTurn)),
+        Expanded(
+          child: Text(
+            Strings.pick(myTurn ? _tYourTurn : _tRivalTurn, lang),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          ),
+        ),
+        Flexible(child: _chip('${widget.ctx.match != null ? widget.ctx.seatName(opp) : Strings.pick(_tRival, lang)} ${match.score[opp]}', !myTurn)),
       ]),
     );
     return ColoredBox(
@@ -444,7 +450,7 @@ class _PoolDuelViewState extends State<PoolDuelView> with SingleTickerProviderSt
           color: active ? const Color(0xFF52B788) : Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
       );
 }
 
