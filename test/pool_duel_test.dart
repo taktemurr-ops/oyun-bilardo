@@ -64,60 +64,175 @@ void main() {
     expect(rules.localPlayers, 2);
   });
 
+  List<Disc> rack(int n) {
+    final b = <Disc>[];
+    rackPool(b, level(n).meta.seed);
+    return b;
+  }
+
+  test('8 top dizilimi: 15 top, 8 ortada, arka köşelerde bir düz bir çizgili', () {
+    final b = rack(3);
+    expect(b.length, 16);
+    expect(b[0].id, 0);
+    expect({for (final x in b.skip(1)) x.id}, {for (var i = 1; i <= 15; i++) i});
+    expect(b[5].id, 8);
+    expect({poolGroupOf(b[11].id), poolGroupOf(b[15].id)}, {0, 1});
+    expect(poolLayout(rack(3)), poolLayout(b));
+  });
+
   test('aynı atış aynı masada aynı sonucu verir (deterministik fizik)', () {
     for (final n in [1, 9, 33, 77]) {
-      final a = PoolSim(level(n)).balls, b = PoolSim(level(n)).balls;
-      final ra = resolvePoolShot(a, 21.5, -30.25), rb = resolvePoolShot(b, 21.5, -30.25);
-      expect(rb, ra);
+      final a = rack(n), b = rack(n);
+      final ra = resolvePoolShot(a, 1.5, -38.25), rb = resolvePoolShot(b, 1.5, -38.25);
+      expect(rb.first, ra.first);
+      expect(rb.ids, ra.ids);
+      expect(ra.first, isNot(0));
       expect(poolLayout(b), poolLayout(a));
     }
   });
 
   test('atış hamlesi yazılır ve okunur', () {
-    final balls = PoolSim(level(4)).balls;
-    final s = PoolShot(12.345678901234, -7.5, 2, true, poolLayout(balls));
+    final balls = rack(4);
+    final s = PoolShot(12.345678901234, -7.5, 480.5, 1200.25, 9, const [3, 0], poolLayout(balls));
     final d = PoolShot.decode(s.encode())!;
     expect(d.vx, s.vx);
     expect(d.vy, s.vy);
-    expect(d.potted, 2);
-    expect(d.foul, isTrue);
-    final copy = PoolSim(level(4)).balls;
+    expect(d.cx, 480.5);
+    expect(d.cy, 1200.25);
+    expect(d.first, 9);
+    expect(d.ids, [3, 0]);
+    expect(d.potted, 1);
+    expect(d.scratch, isTrue);
+    final copy = rack(4);
     expect(applyPoolLayout(copy, d.layout), isTrue);
     expect(poolLayout(copy), poolLayout(balls));
+    expect(PoolShot.decode(PoolShot(1, 2, 3, 4, 0, const [], 'x').encode())!.ids, isEmpty);
     expect(PoolShot.decode('S:x|1|2|0|'), isNull);
+    expect(PoolShot.decode('S:1|1|1|1|1|99|a'), isNull);
     expect(PoolShot.decode('çöp'), isNull);
   });
 
-  test('iki cihaz bütün maç boyunca aynı masada ve aynı puanda kalır', () {
+  group('8 top kuralları', () {
+    List<Disc> table(List<int> ids) => [
+          Disc(500, 1250, kPoolR, 1, 0),
+          for (var i = 0; i < ids.length; i++) Disc(200 + i * 45.0, 700, kPoolR, 1, ids[i]),
+        ];
+    void pot(List<Disc> b, List<int> ids) {
+      for (final x in b) {
+        if (ids.contains(x.id)) x.live = false;
+      }
+    }
+
+    test('beyaz cebe: faul, sıra ve elde top rakibe, beyaz masaya döner', () {
+      final b = table([1, 2, 8, 9]);
+      final m = PoolScore()..broken = true;
+      pot(b, [0]);
+      m.apply(0, const PoolOutcome(1, [0]), b);
+      expect(m.turn, 1);
+      expect(m.ballInHand, isTrue);
+      expect(m.last, 'FOUL');
+      expect(b[0].live, isTrue);
+    });
+
+    test('açılıştan sonra ilk sokuş grubu belirler; sokan yeniden atar', () {
+      final b = table([1, 2, 8, 9, 10]);
+      final m = PoolScore()..broken = true;
+      pot(b, [10]);
+      m.apply(1, const PoolOutcome(9, [10]), b);
+      expect(m.groupOf(1), 1);
+      expect(m.groupOf(0), 0);
+      expect(m.turn, 1);
+      expect(m.ballInHand, isFalse);
+    });
+
+    test('önce rakibin topuna değmek fauldür', () {
+      final b = table([1, 2, 8, 9, 10]);
+      final m = PoolScore()
+        ..broken = true
+        ..group0 = 0;
+      m.apply(0, const PoolOutcome(9, []), b);
+      expect(m.turn, 1);
+      expect(m.ballInHand, isTrue);
+    });
+
+    test('8 erken girerse atan kaybeder, grup bitince girerse kazanır', () {
+      final b = table([1, 8, 9]);
+      final m = PoolScore()
+        ..broken = true
+        ..group0 = 0;
+      pot(b, [8]);
+      m.apply(0, const PoolOutcome(1, [8]), b);
+      expect(m.winner, 1);
+
+      final c = table([8, 9]);
+      final n = PoolScore()
+        ..broken = true
+        ..group0 = 0;
+      expect(n.onEight(c, 0), isTrue);
+      expect(n.legalFirst(c, 0, 8), isTrue);
+      expect(n.legalFirst(c, 0, 9), isFalse);
+      pot(c, [8]);
+      n.apply(0, const PoolOutcome(8, [8]), c);
+      expect(n.winner, 0);
+    });
+
+    test('açılışta giren 8 yerine konur, maç sürer', () {
+      final b = rack(2);
+      final m = PoolScore();
+      pot(b, [8]);
+      m.apply(0, const PoolOutcome(5, [8]), b);
+      expect(m.winner, -1);
+      expect(b.firstWhere((x) => x.id == 8).live, isTrue);
+    });
+
+    test('süre dolunca faul', () {
+      final m = PoolScore()..broken = true;
+      m.timeout(1);
+      expect(m.turn, 0);
+      m.timeout(0);
+      expect(m.turn, 1);
+      expect(m.ballInHand, isTrue);
+    });
+  });
+
+  test('iki cihaz bütün maç boyunca aynı masada ve aynı durumda kalır; maç biter', () {
     for (final n in [2, 15, 40]) {
-      final dev = [PoolSim(level(n)).balls, PoolSim(level(n)).balls];
+      final dev = [rack(n), rack(n)];
       final score = [PoolScore(), PoolScore()];
       final rng = SeededRandom(n);
       var shots = 0;
-      while (dev[0].skip(1).any((b) => b.live) && shots < 400) {
+      while (score[0].winner < 0 && shots < 500) {
         final shooter = score[0].turn;
         // Atan cihaz çözer, yuvarlanmış dizilimi yayınlar.
-        final v = poolBotShot(dev[shooter], 6, rng);
-        final (p, f) = resolvePoolShot(dev[shooter], v.$1, v.$2);
+        final v = poolBotShot(dev[shooter], score[shooter], shooter, 10, rng);
+        dev[shooter][0]
+          ..x = v.$3
+          ..y = v.$4
+          ..live = true;
+        final o = resolvePoolShot(dev[shooter], v.$1, v.$2);
         final layout = poolLayout(dev[shooter]);
-        final msg = PoolShot(v.$1, v.$2, p, f, layout).encode();
+        final msg = PoolShot(v.$1, v.$2, v.$3, v.$4, o.first, o.ids, layout).encode();
         applyPoolLayout(dev[shooter], layout);
+        score[shooter].apply(shooter, o, dev[shooter]);
         // Karşı cihaz aynı atışı oynatır, sonra dizilime oturur.
         final other = 1 - shooter;
         final got = PoolShot.decode(msg)!;
+        dev[other][0]
+          ..x = got.cx
+          ..y = got.cy
+          ..live = true;
         resolvePoolShot(dev[other], got.vx, got.vy);
         applyPoolLayout(dev[other], got.layout);
-        for (final s in score) {
-          s.apply(shooter, got.potted, got.foul);
-        }
+        score[other].apply(shooter, got.outcome, dev[other]);
         expect(poolLayout(dev[other]), poolLayout(dev[shooter]));
+        expect(score[other].turn, score[shooter].turn);
+        expect(score[other].group0, score[shooter].group0);
+        expect(score[other].ballInHand, score[shooter].ballInHand);
         shots++;
       }
       expect(shots, greaterThan(0));
-      expect(score[1].score, score[0].score);
-      expect(score[1].turn, score[0].turn);
-      final left = dev[0].skip(1).where((b) => b.live).length;
-      expect(score[0].score[0] + score[0].score[1], dev[0].length - 1 - left);
+      expect(score[0].winner, isNot(-1), reason: 'bölüm $n: $shots atışta bitmedi');
+      expect(score[1].winner, score[0].winner);
     }
   });
 
@@ -153,9 +268,10 @@ void main() {
     final link = FakeLink(1);
     final out = <RoundResult>[];
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: bilardoConfig.buildPlay(ctxFor(gl, out, link: link)))));
-    final balls = PoolSim(gl.puzzle).balls;
-    final (p, f) = resolvePoolShot(balls, 0.5, -38);
-    link.ctrl.add((0, PoolShot(0.5, -38, p, f, poolLayout(balls)).encode()));
+    final balls = <Disc>[];
+    rackPool(balls, gl.puzzle.meta.seed);
+    final o = resolvePoolShot(balls, 0.5, -38);
+    link.ctrl.add((0, PoolShot(0.5, -38, 500, 1250, o.first, o.ids, poolLayout(balls)).encode()));
     for (var i = 0; i < 1300; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }

@@ -136,39 +136,147 @@ void _golf(Canvas c, GolfSim g, double t) {
 }
 
 // pool --------------------------------------------------------------------------
+/// Standart top renkleri (1-7 düz, 8 siyah, 9-15 çizgili; 9 = 1'in rengi…).
 const _poolColors = [
-  0xFFFFFFFF, 0xFFFFD60A, 0xFF1D4ED8, 0xFFE63946, 0xFF7B2CBF, 0xFFF77F00, 0xFF2A9D8F,
-  0xFF9D0208, 0xFF111111, 0xFFFFD60A, 0xFF1D4ED8, 0xFFE63946, 0xFF7B2CBF, 0xFFF77F00, 0xFF2A9D8F, 0xFF9D0208,
+  0xFFF8F4E8, 0xFFFFC300, 0xFF1D4ED8, 0xFFE63946, 0xFF6A2C91, 0xFFF77F00, 0xFF1B8A5A,
+  0xFF8C1C13, 0xFF111111, 0xFFFFC300, 0xFF1D4ED8, 0xFFE63946, 0xFF6A2C91, 0xFFF77F00, 0xFF1B8A5A, 0xFF8C1C13,
 ];
+
+/// Bir bilardo topu: düz toplar tek renk, çizgililer beyaz üstüne renkli
+/// kuşak; hepsinde beyaz numara pulu (renk körlüğünde de numara okunur).
+void paintPoolBall(Canvas c, Offset o, double r, int id, {bool shadow = true}) {
+  if (shadow) c.drawCircle(o + Offset(r * 0.15, r * 0.25), r, _p(0x44000000));
+  final col = _poolColors[id % _poolColors.length];
+  if (id > 8) {
+    c.drawCircle(o, r, _p(0xFFF8F4E8));
+    c.save();
+    c.clipPath(Path()..addOval(Rect.fromCircle(center: o, radius: r)));
+    c.drawRect(Rect.fromCenter(center: o, width: r * 2, height: r * 1.1), _p(col));
+    c.restore();
+  } else {
+    c.drawCircle(o, r, _p(col));
+  }
+  if (id > 0) {
+    c.drawCircle(o, r * 0.48, _p(0xFFFFFFFF));
+    paintText(c, '$id', o, r * 0.62, Colors.black);
+  }
+  c.drawCircle(o - Offset(r * 0.38, r * 0.4), r * 0.26, _p(0x99FFFFFF));
+}
+
+/// Nişan izi: beyaz top [ang] yönünde giderse ilk neye çarpar?
+/// Döner: (hayalet topun merkezi, çarpılan top ya da null = bant).
+(Offset, Disc?) poolAimHit(List<Disc> balls, double ang) {
+  final cue = balls[0];
+  final dx = math.cos(ang), dy = math.sin(ang);
+  var best = double.infinity;
+  Disc? hit;
+  const rr = kPoolR * 2;
+  for (final b in balls.skip(1)) {
+    if (!b.live) continue;
+    final ox = b.x - cue.x, oy = b.y - cue.y;
+    final proj = ox * dx + oy * dy;
+    if (proj <= 0) continue;
+    final perp2 = ox * ox + oy * oy - proj * proj;
+    if (perp2 >= rr * rr) continue;
+    final t = proj - math.sqrt(rr * rr - perp2);
+    if (t < best) {
+      best = t;
+      hit = b;
+    }
+  }
+  // Bant: beyaz topun merkezi masanın kenarından kPoolR içeride kalır.
+  var tw = double.infinity;
+  if (dx > 1e-9) tw = math.min(tw, (kTable.r - kPoolR - cue.x) / dx);
+  if (dx < -1e-9) tw = math.min(tw, (kTable.l + kPoolR - cue.x) / dx);
+  if (dy > 1e-9) tw = math.min(tw, (kTable.b - kPoolR - cue.y) / dy);
+  if (dy < -1e-9) tw = math.min(tw, (kTable.t + kPoolR - cue.y) / dy);
+  if (tw < best) {
+    best = tw;
+    hit = null;
+  }
+  if (!best.isFinite) best = 0;
+  return (Offset(cue.x + dx * best, cue.y + dy * best), hit);
+}
+
+void _poolGuide(Canvas c, PoolSim s) {
+  final cue = s.balls[0];
+  final a = s.aimAngle;
+  final (ghost, hit) = poolAimHit(s.balls, a);
+  final from = Offset(cue.x, cue.y);
+  final line = _stroke(0xCCFFFFFF, 4);
+  c.drawLine(from, ghost, line);
+  c.drawCircle(ghost, kPoolR, _stroke(0xDDFFFFFF, 3));
+  if (hit != null) {
+    // Hedef topun gideceği yön ve beyazın sapacağı yön (teğet).
+    final n = Offset(hit.x - ghost.dx, hit.y - ghost.dy);
+    final nl = n.distance;
+    if (nl > 1e-6) {
+      final u = n / nl;
+      final hc = Offset(hit.x, hit.y);
+      c.drawLine(hc, hc + u * (90 + s.aimPower * 160), _stroke(0xEEFFFFFF, 5));
+      final d = Offset(math.cos(a), math.sin(a));
+      final along = d.dx * u.dx + d.dy * u.dy;
+      final tg = d - u * along;
+      if (tg.distance > 0.05) c.drawLine(ghost, ghost + tg * 90, _stroke(0x88FFFFFF, 3));
+    }
+  } else {
+    // Bantta yansıma: kısa bir parça.
+    var rx = math.cos(a), ry = math.sin(a);
+    if (ghost.dx <= kTable.l + kPoolR + 0.5 || ghost.dx >= kTable.r - kPoolR - 0.5) rx = -rx;
+    if (ghost.dy <= kTable.t + kPoolR + 0.5 || ghost.dy >= kTable.b - kPoolR - 0.5) ry = -ry;
+    c.drawLine(ghost, ghost + Offset(rx, ry) * 110, _stroke(0x88FFFFFF, 3));
+  }
+}
 
 void _pool(Canvas c, PoolSim s) {
   _bg(c, 0xFF2B2D42, 0xFF1A1B2E);
   final felt = Rect.fromLTRB(kTable.l, kTable.t, kTable.r, kTable.b);
   c.drawRRect(RRect.fromRectAndRadius(felt.inflate(46), const Radius.circular(40)), _p(0xFF5C3A21));
+  // Ahşap damarları ve elmas nişan noktaları.
+  for (var i = 0; i < 6; i++) {
+    c.drawLine(Offset(felt.left - 40, felt.top - 30 + i * 260.0), Offset(felt.left - 26, felt.top + 60 + i * 260.0),
+        _stroke(0x225C2E10, 3));
+  }
   c.drawRRect(RRect.fromRectAndRadius(felt.inflate(20), const Radius.circular(20)), _p(0xFF1B5E20));
-  c.drawRect(felt, _p(0xFF2E7D32));
+  c.drawRect(
+      felt,
+      Paint()
+        ..shader = const RadialGradient(colors: [Color(0xFF379140), Color(0xFF256D2B)], radius: 0.9)
+            .createShader(felt));
+  for (var k = 1; k < 4; k++) {
+    final x = felt.left + felt.width * k / 4;
+    c.drawCircle(Offset(x, felt.top - 33), 5, _p(0xFFE9D8A6));
+    c.drawCircle(Offset(x, felt.bottom + 33), 5, _p(0xFFE9D8A6));
+  }
+  for (var k = 1; k < 8; k++) {
+    if (k == 4) continue;
+    final y = felt.top + felt.height * k / 8;
+    c.drawCircle(Offset(felt.left - 33, y), 5, _p(0xFFE9D8A6));
+    c.drawCircle(Offset(felt.right + 33, y), 5, _p(0xFFE9D8A6));
+  }
   c.drawLine(Offset(kTable.l, 1150), Offset(kTable.r, 1150), _stroke(0x33FFFFFF, 3));
+  c.drawCircle(const Offset(500, 560), 5, _p(0x55FFFFFF));
   for (final pk in kPockets) {
+    c.drawCircle(Offset(pk[0], pk[1]), kPocketR + 6, _p(0xFF3E2716));
     c.drawCircle(Offset(pk[0], pk[1]), kPocketR, _p(0xFF0B0B0B));
   }
   final cue = s.balls[0];
-  if (s.phase == 0 && cue.live) {
-    _dashedAim(c, cue.x, cue.y, s.aimAngle, 120 + s.aimPower * 420, 0x99FFFFFF);
-    // cue stick behind the ball
-    final back = 60 + s.aimPower * 90;
-    final a = s.aimAngle;
-    c.drawLine(
-      Offset(cue.x - math.cos(a) * back, cue.y - math.sin(a) * back),
-      Offset(cue.x - math.cos(a) * (back + 420), cue.y - math.sin(a) * (back + 420)),
-      _stroke(0xFFD4A373, 16),
-    );
-  }
+  if (s.phase == 0 && cue.live) _poolGuide(c, s);
   for (final b in s.balls) {
     if (!b.live) continue;
-    final col = _poolColors[b.id % _poolColors.length];
-    _ball(c, b.x, b.y, kPoolR, col);
-    if (b.id > 8) c.drawCircle(Offset(b.x, b.y), kPoolR * 0.55, _p(0xFFFFFFFF));
-    if (b.id > 0) paintText(c, '${b.id}', Offset(b.x, b.y), 18, b.id > 8 ? Colors.black : Colors.white);
+    paintPoolBall(c, Offset(b.x, b.y), kPoolR, b.id);
+  }
+  if (s.phase == 0 && cue.live) {
+    // İstaka: beyaz topun arkasında, güçle geri çekilir.
+    final back = 34 + s.aimPower * 110;
+    final a = s.aimAngle;
+    final tip = Offset(cue.x - math.cos(a) * back, cue.y - math.sin(a) * back);
+    final butt = Offset(cue.x - math.cos(a) * (back + 520), cue.y - math.sin(a) * (back + 520));
+    c.drawLine(tip + const Offset(6, 10), butt + const Offset(6, 10), _stroke(0x44000000, 18));
+    c.drawLine(tip, butt, _stroke(0xFFD4A373, 16));
+    final mid = Offset.lerp(tip, butt, 0.62)!;
+    c.drawLine(mid, butt, _stroke(0xFF3A2414, 18));
+    c.drawLine(tip, Offset.lerp(tip, butt, 0.03)!, _stroke(0xFF5DADE2, 16));
   }
 }
 

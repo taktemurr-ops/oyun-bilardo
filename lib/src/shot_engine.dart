@@ -656,8 +656,9 @@ class PoolSim extends ShotSim {
     balls[0].vy = math.sin(aimAngle) * sp;
   }
 
-  /// Physics tick; returns true while anything moves. Pots are reported via [onPot].
-  static bool stepTable(List<Disc> bs, void Function(Disc) onPot) {
+  /// Physics tick; returns true while anything moves. Pots are reported via
+  /// [onPot], ball-ball contacts via [onHit].
+  static bool stepTable(List<Disc> bs, void Function(Disc) onPot, [void Function(Disc a, Disc b)? onHit]) {
     for (var s = 0; s < 2; s++) {
       for (final b in bs) {
         if (!b.live) continue;
@@ -669,7 +670,7 @@ class PoolSim extends ShotSim {
         if (!a.live) continue;
         for (var j = i + 1; j < bs.length; j++) {
           final b = bs[j];
-          if (b.live) DiscWorld.collidePair(a, b, 0.95);
+          if (b.live && DiscWorld.collidePair(a, b, 0.95)) onHit?.call(a, b);
         }
       }
       for (final b in bs) {
